@@ -1,0 +1,500 @@
+import fs from 'fs';
+import path from 'path';
+import { Clip, ClipComment, ClipReactionSummary, UserProfile } from './types';
+import { INITIAL_MOCK_CLIPS, INITIAL_MOCK_COMMENTS, MOCK_USERS, CURRENT_USER } from './mock-data';
+import { isSupabaseConfigured } from './auth';
+import { createServerSupabaseClient } from './supabase/server';
+
+// Persistent file-backed cache for development preview mode
+const DEV_CACHE_FILE = path.join(process.cwd(), '.clipvault-dev-data.json');
+
+interface DevStore {
+  clips: Clip[];
+  comments: Record<string, ClipComment[]>;
+}
+
+function loadDevStore(): DevStore {
+  try {
+    if (fs.existsSync(DEV_CACHE_FILE)) {
+      const content = fs.readFileSync(DEV_CACHE_FILE, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.warn('Failed to read dev cache file, initializing defaults:', err);
+  }
+
+  const initial: DevStore = {
+    clips: [...INITIAL_MOCK_CLIPS],
+    comments: { ...INITIAL_MOCK_COMMENTS },
+  };
+
+  try {
+    fs.writeFileSync(DEV_CACHE_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+  } catch (err) {
+    // Ignore in read-only environments
+  }
+
+  return initial;
+}
+
+function saveDevStore(store: DevStore) {
+  try {
+    fs.writeFileSync(DEV_CACHE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to save dev cache file:', err);
+  }
+}
+
+function getDevStore(): DevStore {
+  const globalObj = globalThis as unknown as { __clipvault_store?: DevStore };
+  if (!globalObj.__clipvault_store) {
+    globalObj.__clipvault_store = loadDevStore();
+  }
+  // Also reload from disk if file was updated by another process/worker
+  try {
+    if (fs.existsSync(DEV_CACHE_FILE)) {
+      const content = fs.readFileSync(DEV_CACHE_FILE, 'utf-8');
+      globalObj.__clipvault_store = JSON.parse(content);
+    }
+  } catch {}
+
+  return globalObj.__clipvault_store || loadDevStore();
+}
+
+export interface ClipFilterOptions {
+  search?: string;
+  category?: string;
+  tag?: string;
+  sortBy?: 'newest' | 'oldest';
+  currentUserId?: string;
+}
+
+/**
+ * Retrieves clips that the current user is authorized to see.
+ * Authorization logic adheres strictly to Section 9 & 19 of specification:
+ * - FRIENDS: visible to all approved users
+ * - PRIVATE: visible ONLY to uploader
+ * - SELECTED: visible to uploader OR users in clip_permissions
+ */
+export async function getAuthorizedClips(options: ClipFilterOptions = {}): Promise<Clip[]> {
+  const {
+    search = '',
+    category,
+    tag,
+    sortBy = 'newest',
+    currentUserId = CURRENT_USER.id,
+  } = options;
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      let query = supabase
+        .from('clips')
+        .select(`
+          *,
+          uploader:users!uploaded_by(id, name, avatar_url, email),
+          clip_tags(tags(name)),
+          clip_permissions(user_id),
+          comments(count),
+          reactions(emoji, user_id)
+        `);
+
+      if (category && category !== 'All') {
+        query = query.eq('category', category);
+      }
+
+      if (sortBy === 'oldest') {
+        query = query.order('created_at', { ascending: true });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        let mappedClips: Clip[] = data.map((item: any) => {
+          const tags = (item.clip_tags || []).map((ct: any) => ct.tags?.name).filter(Boolean);
+          const reactionsMap: Record<string, { count: number; reactedByCurrentUser: boolean }> = {};
+          (item.reactions || []).forEach((r: any) => {
+            if (!reactionsMap[r.emoji]) {
+              reactionsMap[r.emoji] = { count: 0, reactedByCurrentUser: false };
+            }
+            reactionsMap[r.emoji].count += 1;
+            if (r.user_id === currentUserId) {
+              reactionsMap[r.emoji].reactedByCurrentUser = true;
+            }
+          });
+
+          return {
+            id: item.id,
+            youtube_video_id: item.youtube_video_id,
+            youtube_url: item.youtube_url,
+            title: item.title,
+            description: item.description,
+            thumbnail_url: item.thumbnail_url,
+            game: item.game,
+            category: item.category,
+            uploaded_by: item.uploaded_by,
+            uploader: item.uploader || {
+              id: item.uploaded_by,
+              name: 'Unknown',
+              email: '',
+            },
+            visibility: item.visibility,
+            tags,
+            reactions: Object.entries(reactionsMap).map(([emoji, meta]) => ({
+              emoji,
+              count: meta.count,
+              reactedByCurrentUser: meta.reactedByCurrentUser,
+            })),
+            comments_count: item.comments?.[0]?.count || 0,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+          };
+        });
+
+        // Search filtering (title & tags)
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          mappedClips = mappedClips.filter(
+            (c) =>
+              c.title.toLowerCase().includes(q) ||
+              c.game.toLowerCase().includes(q) ||
+              c.tags.some((t) => t.toLowerCase().includes(q))
+          );
+        }
+
+        if (tag) {
+          mappedClips = mappedClips.filter((c) =>
+            c.tags.some((t) => t.toLowerCase() === tag.toLowerCase())
+          );
+        }
+
+        return mappedClips;
+      }
+    }
+  }
+
+  // Memory / Local Preview Mode authorization logic
+  const store = getDevStore();
+  let filtered = store.clips.filter((clip) => {
+    if (clip.visibility === 'FRIENDS') return true;
+    if (clip.visibility === 'PRIVATE') return clip.uploaded_by === currentUserId;
+    if (clip.visibility === 'SELECTED') {
+      return (
+        clip.uploaded_by === currentUserId ||
+        (clip.allowed_user_ids && clip.allowed_user_ids.includes(currentUserId))
+      );
+    }
+    return false;
+  });
+
+  if (category && category !== 'All') {
+    filtered = filtered.filter((c) => c.category.toLowerCase() === category.toLowerCase());
+  }
+
+  if (tag) {
+    filtered = filtered.filter((c) =>
+      c.tags.some((t) => t.toLowerCase() === tag.toLowerCase())
+    );
+  }
+
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.game.toLowerCase().includes(q) ||
+        c.tags.some((t) => t.toLowerCase().includes(q))
+    );
+  }
+
+  // Sorting
+  filtered.sort((a, b) => {
+    const dateA = new Date(a.created_at).getTime();
+    const dateB = new Date(b.created_at).getTime();
+    return sortBy === 'oldest' ? dateA - dateB : dateB - dateA;
+  });
+
+  return filtered;
+}
+
+/**
+ * Retrieves a single clip by ID with authorization verification
+ */
+export async function getClipById(id: string, currentUserId: string = CURRENT_USER.id): Promise<Clip | null> {
+  const clips = await getAuthorizedClips({ currentUserId });
+  const clip = clips.find((c) => c.id === id);
+  return clip || null;
+}
+
+/**
+ * Checks whether a YouTube video ID already exists in ClipVault (duplicate prevention - Section 29)
+ */
+export async function isDuplicateYouTubeVideo(youtubeVideoId: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { data } = await supabase
+        .from('clips')
+        .select('id')
+        .eq('youtube_video_id', youtubeVideoId)
+        .maybeSingle();
+      return Boolean(data);
+    }
+  }
+
+  const store = getDevStore();
+  return store.clips.some((c) => c.youtube_video_id === youtubeVideoId);
+}
+
+/**
+ * Adds a new clip
+ */
+export async function createClip(
+  clipData: Omit<Clip, 'id' | 'created_at' | 'updated_at' | 'reactions' | 'comments_count' | 'uploader'>,
+  user: UserProfile
+): Promise<Clip> {
+  const isDuplicate = await isDuplicateYouTubeVideo(clipData.youtube_video_id);
+  if (isDuplicate) {
+    throw new Error('This YouTube video has already been added to ClipVault.');
+  }
+
+  const now = new Date().toISOString();
+  const newClip: Clip = {
+    ...clipData,
+    id: `clip-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    uploaded_by: user.id,
+    uploader: {
+      id: user.id,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      email: user.email,
+    },
+    reactions: [
+      { emoji: '😂', count: 0, reactedByCurrentUser: false },
+      { emoji: '💀', count: 0, reactedByCurrentUser: false },
+      { emoji: '🔥', count: 0, reactedByCurrentUser: false },
+      { emoji: '🤡', count: 0, reactedByCurrentUser: false },
+    ],
+    comments_count: 0,
+    created_at: now,
+    updated_at: now,
+  };
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('clips')
+        .insert({
+          youtube_video_id: clipData.youtube_video_id,
+          youtube_url: clipData.youtube_url,
+          title: clipData.title,
+          description: clipData.description,
+          thumbnail_url: clipData.thumbnail_url,
+          game: clipData.game,
+          category: clipData.category,
+          uploaded_by: user.id,
+          visibility: clipData.visibility,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      for (const tagName of clipData.tags) {
+        const { data: tagData } = await supabase
+          .from('tags')
+          .upsert({ name: tagName }, { onConflict: 'name' })
+          .select()
+          .single();
+
+        if (tagData) {
+          await supabase.from('clip_tags').insert({
+            clip_id: data.id,
+            tag_id: tagData.id,
+          });
+        }
+      }
+
+      if (clipData.visibility === 'SELECTED' && clipData.allowed_user_ids) {
+        for (const allowedId of clipData.allowed_user_ids) {
+          await supabase.from('clip_permissions').insert({
+            clip_id: data.id,
+            user_id: allowedId,
+          });
+        }
+      }
+
+      return {
+        ...newClip,
+        id: data.id,
+      };
+    }
+  }
+
+  // Add to persistent dev store
+  const store = getDevStore();
+  store.clips.unshift(newClip);
+  store.comments[newClip.id] = [];
+  saveDevStore(store);
+
+  return newClip;
+}
+
+/**
+ * Updates an existing clip's metadata (only allowed by uploader)
+ */
+export async function updateClip(
+  clipId: string,
+  updates: Partial<Pick<Clip, 'title' | 'description' | 'game' | 'category' | 'tags' | 'visibility' | 'allowed_user_ids'>>,
+  userId: string
+): Promise<Clip> {
+  const store = getDevStore();
+  const existingIndex = store.clips.findIndex((c) => c.id === clipId);
+  if (existingIndex === -1) {
+    throw new Error('Clip not found.');
+  }
+
+  const existing = store.clips[existingIndex];
+  if (existing.uploaded_by !== userId) {
+    throw new Error('Unauthorized: Only the uploader can edit this clip.');
+  }
+
+  const updated: Clip = {
+    ...existing,
+    ...updates,
+    updated_at: new Date().toISOString(),
+  };
+
+  store.clips[existingIndex] = updated;
+  saveDevStore(store);
+
+  return updated;
+}
+
+/**
+ * Deletes a clip (only allowed by uploader)
+ */
+export async function deleteClip(clipId: string, userId: string): Promise<boolean> {
+  const store = getDevStore();
+  const existingIndex = store.clips.findIndex((c) => c.id === clipId);
+  if (existingIndex === -1) {
+    return false;
+  }
+
+  if (store.clips[existingIndex].uploaded_by !== userId) {
+    throw new Error('Unauthorized: Only the uploader can delete this clip.');
+  }
+
+  store.clips.splice(existingIndex, 1);
+  delete store.comments[clipId];
+  saveDevStore(store);
+
+  return true;
+}
+
+/**
+ * Comments retrieval for a clip
+ */
+export async function getClipComments(clipId: string): Promise<ClipComment[]> {
+  const store = getDevStore();
+  return store.comments[clipId] || [];
+}
+
+/**
+ * Add a comment to a clip
+ */
+export async function addClipComment(
+  clipId: string,
+  content: string,
+  user: UserProfile
+): Promise<ClipComment> {
+  if (!content || !content.trim()) {
+    throw new Error('Comment content cannot be empty.');
+  }
+
+  const newComment: ClipComment = {
+    id: `comm-${Date.now()}`,
+    clip_id: clipId,
+    user_id: user.id,
+    user: {
+      name: user.name,
+      email: user.email,
+      avatar_url: user.avatar_url,
+    },
+    content: content.trim(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const store = getDevStore();
+  if (!store.comments[clipId]) {
+    store.comments[clipId] = [];
+  }
+  store.comments[clipId].push(newComment);
+
+  const clip = store.clips.find((c) => c.id === clipId);
+  if (clip) {
+    clip.comments_count = (clip.comments_count || 0) + 1;
+  }
+
+  saveDevStore(store);
+  return newComment;
+}
+
+/**
+ * Delete a comment (strictly author-only - Section 21)
+ */
+export async function deleteClipComment(commentId: string, userId: string): Promise<boolean> {
+  const store = getDevStore();
+  for (const clipId of Object.keys(store.comments)) {
+    const list = store.comments[clipId];
+    const targetIdx = list.findIndex((c) => c.id === commentId);
+    if (targetIdx !== -1) {
+      if (list[targetIdx].user_id !== userId) {
+        throw new Error('Unauthorized: You can only delete your own comments.');
+      }
+      list.splice(targetIdx, 1);
+      const clip = store.clips.find((c) => c.id === clipId);
+      if (clip && clip.comments_count > 0) {
+        clip.comments_count -= 1;
+      }
+      saveDevStore(store);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Toggle an emoji reaction on a clip
+ */
+export async function toggleClipReaction(
+  clipId: string,
+  emoji: string,
+  userId: string
+): Promise<ClipReactionSummary[]> {
+  const store = getDevStore();
+  const clip = store.clips.find((c) => c.id === clipId);
+  if (!clip) throw new Error('Clip not found.');
+
+  let summary = clip.reactions.find((r) => r.emoji === emoji);
+  if (!summary) {
+    summary = { emoji, count: 0, reactedByCurrentUser: false };
+    clip.reactions.push(summary);
+  }
+
+  if (summary.reactedByCurrentUser) {
+    summary.count = Math.max(0, summary.count - 1);
+    summary.reactedByCurrentUser = false;
+  } else {
+    summary.count += 1;
+    summary.reactedByCurrentUser = true;
+  }
+
+  saveDevStore(store);
+  return clip.reactions;
+}
