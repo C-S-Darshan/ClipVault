@@ -62,11 +62,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Unlisted clips organized, discussed, and authorized for your friend circle.
           </p>
         </div>
-
-        <Link href="/add" className="btn btn-primary" style={{ padding: '0.75rem 1.5rem' }}>
-          <Plus size={18} />
-          <span>Upload YouTube Clip</span>
-        </Link>
       </div>
 
       {/* Filter and Search Bar with Suspense for URL query params */}

@@ -1,19 +1,9 @@
 import { createServerSupabaseClient } from './supabase/server';
+import { isSupabaseConfigured } from './supabase/config';
 import { CURRENT_USER, MOCK_USERS } from './mock-data';
 import { UserProfile } from './types';
 
-export function isSupabaseConfigured(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  return Boolean(
-    url &&
-    key &&
-    !url.includes('your-project') &&
-    !url.includes('placeholder') &&
-    !key.includes('your-anon-key') &&
-    url.startsWith('https://')
-  );
-}
+export { isSupabaseConfigured };
 
 export async function getCurrentUser(): Promise<UserProfile> {
   if (!isSupabaseConfigured()) {
