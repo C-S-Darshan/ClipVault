@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS public.reactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     clip_id UUID NOT NULL REFERENCES public.clips(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL, -- e.g. '😂', '💀', '🔥', '🤡'
+    emoji TEXT NOT NULL, -- e.g. '😂', '💀', '🔥', '🤡'
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    CONSTRAINT unique_user_clip_reaction UNIQUE (clip_id, user_id, type)
+    CONSTRAINT unique_user_clip_reaction UNIQUE (clip_id, user_id, emoji)
 );
 
 CREATE INDEX IF NOT EXISTS idx_reactions_clip ON public.reactions(clip_id);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Clip, CLIP_CATEGORIES, ClipCategory, ClipVisibility } from '@/lib/types';
 import {
@@ -56,6 +56,18 @@ export const EditClipForm: React.FC<EditClipFormProps> = ({ clip }) => {
 
   const [visibility, setVisibility] = useState<ClipVisibility>(clip.visibility);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(clip.allowed_user_ids || []);
+  const [availableFriends, setAvailableFriends] = useState<{ id: string; name: string }[]>(MOCK_FRIENDS);
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.users && data.users.length > 0) {
+          setAvailableFriends(data.users.map((u: any) => ({ id: u.id, name: u.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -350,7 +362,7 @@ export const EditClipForm: React.FC<EditClipFormProps> = ({ clip }) => {
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)' }}>
                 Permitted users:
               </span>
-              {MOCK_FRIENDS.map((f) => (
+              {availableFriends.map((f) => (
                 <label
                   key={f.id}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { CLIP_CATEGORIES, ClipCategory, ClipVisibility } from '@/lib/types';
@@ -59,6 +59,18 @@ export default function AddClipPage() {
 
   const [visibility, setVisibility] = useState<ClipVisibility>('FRIENDS');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [availableFriends, setAvailableFriends] = useState<{ id: string; name: string }[]>(MOCK_FRIENDS);
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.users && data.users.length > 0) {
+          setAvailableFriends(data.users.map((u: any) => ({ id: u.id, name: u.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -537,7 +549,7 @@ export default function AddClipPage() {
                   <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)' }}>
                     Select permitted friends:
                   </span>
-                  {MOCK_FRIENDS.map((f) => (
+                  {availableFriends.map((f) => (
                     <label
                       key={f.id}
                       style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}

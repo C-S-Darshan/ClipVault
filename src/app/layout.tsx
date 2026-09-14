@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getCurrentUser, isSupabaseConfigured } from '@/lib/auth';
+import { AuthButton } from '@/components/AuthButton';
 import { Film, Plus, ShieldCheck, Search, Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -96,62 +97,8 @@ export default async function RootLayout({
                 <span>Add Clip</span>
               </Link>
 
-              {/* User Account / Membership status badge */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  padding: '0.35rem 0.75rem',
-                  background: 'var(--bg-surface-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-full)',
-                }}
-              >
-                {user.avatar_url ? (
-                  <img
-                    src={user.avatar_url}
-                    alt={user.name}
-                    style={{
-                      width: '1.75rem',
-                      height: '1.75rem',
-                      borderRadius: '50%',
-                      objectFit: 'cover',
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: '1.75rem',
-                      height: '1.75rem',
-                      borderRadius: '50%',
-                      background: 'var(--accent-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {user.name.charAt(0)}
-                  </div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{user.name}</span>
-                  <span
-                    style={{
-                      fontSize: '0.65rem',
-                      color: user.is_approved ? 'var(--accent-success)' : 'var(--accent-warning)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.2rem',
-                    }}
-                  >
-                    <ShieldCheck size={10} />
-                    {user.is_approved ? 'Approved Member' : 'Pending Approval'}
-                  </span>
-                </div>
-              </div>
+              {/* User Account / Auth Button */}
+              <AuthButton user={user} hasCloudConfig={hasCloudConfig} />
             </div>
           </div>
         </header>

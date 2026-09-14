@@ -352,6 +352,64 @@ export async function updateClip(
   updates: Partial<Pick<Clip, 'title' | 'description' | 'game' | 'category' | 'tags' | 'visibility' | 'allowed_user_ids'>>,
   userId: string
 ): Promise<Clip> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const updatePayload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.title !== undefined) updatePayload.title = updates.title.trim();
+      if (updates.description !== undefined) updatePayload.description = (updates.description || '').trim();
+      if (updates.game !== undefined) updatePayload.game = updates.game.trim();
+      if (updates.category !== undefined) updatePayload.category = updates.category;
+      if (updates.visibility !== undefined) updatePayload.visibility = updates.visibility;
+
+      const { error } = await supabase
+        .from('clips')
+        .update(updatePayload)
+        .eq('id', clipId)
+        .eq('uploaded_by', userId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (updates.tags !== undefined) {
+        await supabase.from('clip_tags').delete().eq('clip_id', clipId);
+        for (const tagName of updates.tags) {
+          const { data: tagData } = await supabase
+            .from('tags')
+            .upsert({ name: tagName.trim() }, { onConflict: 'name' })
+            .select()
+            .single();
+
+          if (tagData) {
+            await supabase.from('clip_tags').insert({
+              clip_id: clipId,
+              tag_id: tagData.id,
+            });
+          }
+        }
+      }
+
+      if (updates.visibility !== undefined || updates.allowed_user_ids !== undefined) {
+        await supabase.from('clip_permissions').delete().eq('clip_id', clipId);
+        if (updates.visibility === 'SELECTED' && updates.allowed_user_ids) {
+          for (const allowedId of updates.allowed_user_ids) {
+            await supabase.from('clip_permissions').insert({
+              clip_id: clipId,
+              user_id: allowedId,
+            });
+          }
+        }
+      }
+
+      const updatedClip = await getClipById(clipId, userId);
+      if (!updatedClip) throw new Error('Clip not found after update.');
+      return updatedClip;
+    }
+  }
+
   const store = getDevStore();
   const existingIndex = store.clips.findIndex((c) => c.id === clipId);
   if (existingIndex === -1) {
@@ -379,6 +437,22 @@ export async function updateClip(
  * Deletes a clip (only allowed by uploader)
  */
 export async function deleteClip(clipId: string, userId: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('clips')
+        .delete()
+        .eq('id', clipId)
+        .eq('uploaded_by', userId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return true;
+    }
+  }
+
   const store = getDevStore();
   const existingIndex = store.clips.findIndex((c) => c.id === clipId);
   if (existingIndex === -1) {
@@ -400,6 +474,43 @@ export async function deleteClip(clipId: string, userId: string): Promise<boolea
  * Comments retrieval for a clip
  */
 export async function getClipComments(clipId: string): Promise<ClipComment[]> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          clip_id,
+          user_id,
+          content,
+          created_at,
+          updated_at,
+          user:users!user_id(name, email, avatar_url)
+        `)
+        .eq('clip_id', clipId)
+        .order('created_at', { ascending: true });
+
+      if (!error && data) {
+        return data.map((c: any) => {
+          const commentUser = Array.isArray(c.user) ? c.user[0] : c.user;
+          return {
+            id: c.id,
+            clip_id: c.clip_id,
+            user_id: c.user_id,
+            content: c.content,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+            user: commentUser || {
+              name: 'Unknown',
+              email: '',
+            },
+          };
+        });
+      }
+    }
+  }
+
   const store = getDevStore();
   return store.comments[clipId] || [];
 }
@@ -414,6 +525,50 @@ export async function addClipComment(
 ): Promise<ClipComment> {
   if (!content || !content.trim()) {
     throw new Error('Comment content cannot be empty.');
+  }
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          clip_id: clipId,
+          user_id: user.id,
+          content: content.trim(),
+        })
+        .select(`
+          id,
+          clip_id,
+          user_id,
+          content,
+          created_at,
+          updated_at,
+          user:users!user_id(name, email, avatar_url)
+        `)
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const commentData = data as any;
+      const commentUser = Array.isArray(commentData.user) ? commentData.user[0] : commentData.user;
+
+      return {
+        id: commentData.id,
+        clip_id: commentData.clip_id,
+        user_id: commentData.user_id,
+        content: commentData.content,
+        created_at: commentData.created_at,
+        updated_at: commentData.updated_at,
+        user: commentUser || {
+          name: user.name,
+          email: user.email,
+          avatar_url: user.avatar_url,
+        },
+      };
+    }
   }
 
   const newComment: ClipComment = {
@@ -449,6 +604,22 @@ export async function addClipComment(
  * Delete a comment (strictly author-only - Section 21)
  */
 export async function deleteClipComment(commentId: string, userId: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('user_id', userId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return true;
+    }
+  }
+
   const store = getDevStore();
   for (const clipId of Object.keys(store.comments)) {
     const list = store.comments[clipId];
@@ -477,6 +648,52 @@ export async function toggleClipReaction(
   emoji: string,
   userId: string
 ): Promise<ClipReactionSummary[]> {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { data: existing } = await supabase
+        .from('reactions')
+        .select('id')
+        .eq('clip_id', clipId)
+        .eq('user_id', userId)
+        .eq('emoji', emoji)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from('reactions').delete().eq('id', existing.id);
+      } else {
+        await supabase.from('reactions').insert({
+          clip_id: clipId,
+          user_id: userId,
+          emoji,
+        });
+      }
+
+      const { data: allReactions } = await supabase
+        .from('reactions')
+        .select('emoji, user_id')
+        .eq('clip_id', clipId);
+
+      const map: Record<string, { count: number; reactedByCurrentUser: boolean }> = {};
+      (allReactions || []).forEach((r: any) => {
+        if (!map[r.emoji]) {
+          map[r.emoji] = { count: 0, reactedByCurrentUser: false };
+        }
+        map[r.emoji].count += 1;
+        if (r.user_id === userId) {
+          map[r.emoji].reactedByCurrentUser = true;
+        }
+      });
+
+      const defaultEmojis = ['😂', '💀', '🔥', '🤡'];
+      return defaultEmojis.map((e) => ({
+        emoji: e,
+        count: map[e]?.count || 0,
+        reactedByCurrentUser: map[e]?.reactedByCurrentUser || false,
+      }));
+    }
+  }
+
   const store = getDevStore();
   const clip = store.clips.find((c) => c.id === clipId);
   if (!clip) throw new Error('Clip not found.');

@@ -22,7 +22,14 @@ export async function getCurrentUser(): Promise<UserProfile> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return CURRENT_USER;
+    return {
+      id: '',
+      email: '',
+      name: 'Guest',
+      avatar_url: undefined,
+      is_approved: false,
+      created_at: new Date().toISOString(),
+    };
   }
 
   const { data: profile } = await supabase
