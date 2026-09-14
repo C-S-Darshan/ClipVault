@@ -1,7 +1,8 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getCurrentUser, isSupabaseConfigured } from '@/lib/auth';
+import { getCurrentUser } from '@/lib/auth';
+import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from '@/lib/supabase/config';
 import { AuthButton } from '@/components/AuthButton';
 import { Film, Plus, ShieldCheck, Search, Sparkles } from 'lucide-react';
 
@@ -9,8 +10,6 @@ export const metadata: Metadata = {
   title: 'ClipVault — Private Friend Group Clip Library',
   description: 'Private, authenticated media library for organizing, watching, and discussing clips.',
 };
-
-import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from '@/lib/supabase/config';
 
 export default async function RootLayout({
   children,
