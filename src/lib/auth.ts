@@ -5,27 +5,40 @@ import { UserProfile } from './types';
 
 export { isSupabaseConfigured };
 
+export function isUserLoggedIn(user: UserProfile | null | undefined): boolean {
+  if (!user) return false;
+  if (!user.id || user.id === '' || user.name === 'Guest') return false;
+  return true;
+}
+
+export function isUserApproved(user: UserProfile | null | undefined): boolean {
+  if (!isUserLoggedIn(user)) return false;
+  return Boolean(user?.is_approved);
+}
+
+export const GUEST_USER: UserProfile = {
+  id: '',
+  email: '',
+  name: 'Guest',
+  avatar_url: undefined,
+  is_approved: false,
+  created_at: new Date().toISOString(),
+};
+
 export async function getCurrentUser(): Promise<UserProfile> {
   if (!isSupabaseConfigured()) {
-    return CURRENT_USER;
+    return GUEST_USER;
   }
 
   const supabase = await createServerSupabaseClient();
-  if (!supabase) return CURRENT_USER;
+  if (!supabase) return GUEST_USER;
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return {
-      id: '',
-      email: '',
-      name: 'Guest',
-      avatar_url: undefined,
-      is_approved: false,
-      created_at: new Date().toISOString(),
-    };
+    return GUEST_USER;
   }
 
   const { data: profile } = await supabase

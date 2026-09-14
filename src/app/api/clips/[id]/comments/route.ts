@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClipComments, addClipComment, deleteClipComment } from '@/lib/data';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isUserLoggedIn, isUserApproved } from '@/lib/auth';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -14,6 +14,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getCurrentUser();
+
+    if (!isUserLoggedIn(user)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You must sign in to leave a comment.' },
+        { status: 401 }
+      );
+    }
+
+    if (!isUserApproved(user)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Your account is pending admin approval before you can comment.' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { content } = body;
 

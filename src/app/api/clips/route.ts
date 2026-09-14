@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClip, getAuthorizedClips } from '@/lib/data';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isUserLoggedIn, isUserApproved } from '@/lib/auth';
 import { extractYouTubeVideoId, getCanonicalYouTubeUrl } from '@/lib/youtube';
 
 export async function GET(req: NextRequest) {
@@ -16,6 +16,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser();
+
+    if (!isUserLoggedIn(user)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You must sign in to upload clips to ClipVault.' },
+        { status: 401 }
+      );
+    }
+
+    if (!isUserApproved(user)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Your account is pending admin approval before you can upload clips.' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
 
     const {

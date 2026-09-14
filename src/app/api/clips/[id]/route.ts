@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClipById, updateClip, deleteClip } from '@/lib/data';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isUserLoggedIn, isUserApproved } from '@/lib/auth';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -20,6 +20,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getCurrentUser();
+
+    if (!isUserLoggedIn(user) || !isUserApproved(user)) {
+      return NextResponse.json({ error: 'Unauthorized: Approved account required.' }, { status: 403 });
+    }
+
     const body = await req.json();
 
     const updated = await updateClip(params.id, body, user.id);
@@ -32,6 +37,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getCurrentUser();
+
+    if (!isUserLoggedIn(user) || !isUserApproved(user)) {
+      return NextResponse.json({ error: 'Unauthorized: Approved account required.' }, { status: 403 });
+    }
+
     const success = await deleteClip(params.id, user.id);
 
     if (!success) {
@@ -43,3 +53,4 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: error.message || 'Failed to delete clip' }, { status: 403 });
   }
 }
+

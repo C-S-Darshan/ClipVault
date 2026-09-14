@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toggleClipReaction } from '@/lib/data';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, isUserLoggedIn, isUserApproved } from '@/lib/auth';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getCurrentUser();
+
+    if (!isUserLoggedIn(user)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: You must sign in to react to clips.' },
+        { status: 401 }
+      );
+    }
+
+    if (!isUserApproved(user)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Your account is pending admin approval.' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { emoji } = body;
 

@@ -23,9 +23,27 @@ export const ClipInteractions: React.FC<ClipInteractionsProps> = ({
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [isTogglingReaction, setIsTogglingReaction] = useState<string | null>(null);
 
+  const [reactionNotice, setReactionNotice] = useState<string | null>(null);
+
+  const isLoggedIn = Boolean(currentUser && currentUser.id && currentUser.name !== 'Guest');
+  const isApproved = Boolean(isLoggedIn && currentUser.is_approved);
+
   // Toggle reaction
   const handleToggleReaction = async (emoji: string) => {
     if (isTogglingReaction) return;
+
+    if (!isLoggedIn) {
+      setReactionNotice('Please sign in to react to clips.');
+      setTimeout(() => setReactionNotice(null), 3500);
+      return;
+    }
+
+    if (!isApproved) {
+      setReactionNotice('Account pending admin approval. Reactions are limited to approved members.');
+      setTimeout(() => setReactionNotice(null), 3500);
+      return;
+    }
+
     setIsTogglingReaction(emoji);
 
     // Optimistic UI update
@@ -144,6 +162,23 @@ export const ClipInteractions: React.FC<ClipInteractionsProps> = ({
             );
           })}
         </div>
+        {/* Reaction Notice Banner */}
+        {reactionNotice && (
+          <div
+            style={{
+              marginTop: '0.6rem',
+              padding: '0.45rem 0.85rem',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              color: '#fca5a5',
+              fontSize: '0.8rem',
+              display: 'inline-block',
+            }}
+          >
+            {reactionNotice}
+          </div>
+        )}
       </div>
 
       {/* Discussion / Comments Section */}
@@ -155,36 +190,72 @@ export const ClipInteractions: React.FC<ClipInteractionsProps> = ({
           </h2>
         </div>
 
-        {/* Comment input form */}
-        <form onSubmit={handleAddComment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
-          <textarea
-            className="textarea-field"
-            placeholder="Write a comment or quote a timestamp..."
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            rows={2}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="submit"
-              disabled={isPostingComment || !newComment.trim()}
-              className="btn btn-primary btn-sm"
-              style={{ padding: '0.5rem 1rem' }}
-            >
-              {isPostingComment ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Posting...</span>
-                </>
-              ) : (
-                <>
-                  <Send size={14} />
-                  <span>Comment</span>
-                </>
-              )}
-            </button>
+        {/* Comment input form or Auth Gate */}
+        {!isLoggedIn ? (
+          <div
+            style={{
+              padding: '1.5rem',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              textAlign: 'center',
+              marginBottom: '2rem',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              You must sign in with an approved account to join the discussion.
+            </p>
           </div>
-        </form>
+        ) : !isApproved ? (
+          <div
+            style={{
+              padding: '1.25rem 1.5rem',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: 'var(--radius-md)',
+              textAlign: 'center',
+              marginBottom: '2rem',
+            }}
+          >
+            <p style={{ color: 'var(--accent-warning)', fontSize: '0.875rem', fontWeight: 500 }}>
+              Your account is awaiting administrator approval. You can read comments, but posting is reserved for approved members.
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleAddComment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+            <textarea
+              className="textarea-field"
+              placeholder="Write a comment or quote a timestamp..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              rows={2}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="submit"
+                disabled={isPostingComment || !newComment.trim()}
+                className="btn btn-primary btn-sm"
+                style={{ padding: '0.5rem 1rem' }}
+              >
+                {isPostingComment ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Posting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    <span>Comment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Comments Feed */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
