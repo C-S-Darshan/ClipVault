@@ -1,6 +1,6 @@
 'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
@@ -13,11 +13,16 @@ interface AuthButtonProps {
 
 export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) => {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [email, setEmail] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSignInWithGoogle = async () => {
     setIsLoading(true);
@@ -248,198 +253,214 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) 
         <span>Sign In</span>
       </button>
 
-      {/* Auth Modal */}
-      {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            padding: '1rem',
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowModal(false);
-          }}
-        >
+      {/* Auth Modal via React Portal to document.body */}
+      {showModal &&
+        mounted &&
+        createPortal(
           <div
-            className="glass-panel"
             style={{
-              width: '100%',
-              maxWidth: '420px',
-              padding: '2rem',
-              borderRadius: 'var(--radius-lg)',
-              position: 'relative',
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0, 0, 0, 0.8)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '1.25rem',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 999999,
+              padding: '1.5rem',
+              boxSizing: 'border-box',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowModal(false);
             }}
           >
-            {/* Close Button */}
-            <button
-              onClick={() => setShowModal(false)}
+            <div
+              className="glass-panel"
               style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
+                width: '100%',
+                maxWidth: '420px',
+                maxHeight: '88vh',
+                overflowY: 'auto',
+                background: '#0d111a',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
+                padding: '2rem',
+                borderRadius: 'var(--radius-lg)',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+                boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85)',
+                margin: 'auto',
               }}
             >
-              <X size={20} />
-            </button>
-
-            <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff', marginBottom: '0.35rem' }}>
-                Sign in to ClipVault
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Access private gaming clips, discussions, and reactions.
-              </p>
-            </div>
-
-            {authError && (
-              <div
+              {/* Close Button */}
+              <button
+                onClick={() => setShowModal(false)}
                 style={{
-                  padding: '0.75rem 1rem',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: '#f87171',
-                  fontSize: '0.8rem',
-                  display: 'flex',
-                  gap: '0.5rem',
-                  alignItems: 'flex-start',
+                  position: 'absolute',
+                  top: '1rem',
+                  right: '1rem',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
                 }}
               >
-                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
-                <span>{authError}</span>
-              </div>
-            )}
+                <X size={20} />
+              </button>
 
-            {magicLinkSent ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '1.5rem 1rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                }}
-              >
-                <CheckCircle2 size={42} color="var(--accent-success)" />
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>Check your inbox!</h3>
+              <div>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff', marginBottom: '0.35rem' }}>
+                  Sign in to ClipVault
+                </h2>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  We sent a magic sign-in link to <strong>{email}</strong>. Click the link in the email to sign in.
+                  Access private gaming clips, discussions, and reactions.
                 </p>
-                <button
-                  onClick={() => setMagicLinkSent(false)}
-                  className="btn btn-secondary"
-                  style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}
-                >
-                  Use a different email
-                </button>
               </div>
-            ) : (
-              <>
-                {/* Google Sign In */}
-                <button
-                  onClick={handleSignInWithGoogle}
-                  disabled={isLoading}
-                  className="btn btn-secondary"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    justifyContent: 'center',
-                    gap: '0.75rem',
-                    fontWeight: 600,
-                  }}
-                >
-                  {isLoading ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24">
-                      <path
-                        fill="#EA4335"
-                        d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.7 1 4 3.5 2.2 7.1l3.7 2.8C6.7 7.3 9.1 5 12 5z"
-                      />
-                      <path
-                        fill="#4285F4"
-                        d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.8c2.2-2 3.7-5 3.7-8.7z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.9 14.1c-.2-.7-.4-1.4-.4-2.1s.1-1.4.4-2.1L2.2 7.1C1.4 8.6 1 10.2 1 12s.4 3.4 1.2 4.9l3.7-2.8z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.8c-1.1.7-2.5 1.2-4.3 1.2-2.9 0-5.3-2-6.1-4.7L2.2 16.5C4 20.1 7.7 23 12 23z"
-                      />
-                    </svg>
-                  )}
-                  <span>Continue with Google</span>
-                </button>
 
+              {authError && (
                 <div
                   style={{
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: '#f87171',
+                    fontSize: '0.8rem',
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    color: 'var(--text-dim)',
-                    fontSize: '0.75rem',
+                    gap: '0.5rem',
+                    alignItems: 'flex-start',
                   }}
                 >
-                  <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
-                  <span>OR WITH EMAIL</span>
-                  <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
+                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                  <span>{authError}</span>
                 </div>
+              )}
 
-                {/* Email Magic Link Form */}
-                <form onSubmit={handleSignInWithEmail} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                      Email address
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="input-field"
-                      style={{ padding: '0.65rem 0.85rem' }}
-                    />
-                  </div>
-
+              {magicLinkSent ? (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '1.5rem 1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <CheckCircle2 size={42} color="var(--accent-success)" />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>Check your inbox!</h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    We sent a magic sign-in link to <strong>{email}</strong>. Click the link in the email to sign in.
+                  </p>
                   <button
-                    type="submit"
-                    disabled={isLoading || !email.trim()}
-                    className="btn btn-primary"
+                    onClick={() => setMagicLinkSent(false)}
+                    className="btn btn-secondary"
+                    style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Google Sign In */}
+                  <button
+                    onClick={handleSignInWithGoogle}
+                    disabled={isLoading}
+                    className="btn btn-secondary"
                     style={{
                       width: '100%',
                       padding: '0.75rem',
                       justifyContent: 'center',
-                      gap: '0.5rem',
+                      gap: '0.75rem',
                       fontWeight: 600,
                     }}
                   >
-                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
-                    <span>Send Magic Link</span>
+                    {isLoading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24">
+                        <path
+                          fill="#EA4335"
+                          d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.7 1 4 3.5 2.2 7.1l3.7 2.8C6.7 7.3 9.1 5 12 5z"
+                        />
+                        <path
+                          fill="#4285F4"
+                          d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.8c2.2-2 3.7-5 3.7-8.7z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.9 14.1c-.2-.7-.4-1.4-.4-2.1s.1-1.4.4-2.1L2.2 7.1C1.4 8.6 1 10.2 1 12s.4 3.4 1.2 4.9l3.7-2.8z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.8c-1.1.7-2.5 1.2-4.3 1.2-2.9 0-5.3-2-6.1-4.7L2.2 16.5C4 20.1 7.7 23 12 23z"
+                        />
+                      </svg>
+                    )}
+                    <span>Continue with Google</span>
                   </button>
-                </form>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      color: 'var(--text-dim)',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
+                    <span>OR WITH EMAIL</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
+                  </div>
+
+                  {/* Email Magic Link Form */}
+                  <form onSubmit={handleSignInWithEmail} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        Email address
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="input-field"
+                        style={{ padding: '0.65rem 0.85rem' }}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isLoading || !email.trim()}
+                      className="btn btn-primary"
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+                      <span>Send Magic Link</span>
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 };
