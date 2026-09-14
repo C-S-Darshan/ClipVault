@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: 'Private, authenticated media library for organizing, watching, and discussing clips.',
 };
 
+import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from '@/lib/supabase/config';
+
 export default async function RootLayout({
   children,
 }: {
@@ -17,6 +19,8 @@ export default async function RootLayout({
 }) {
   const user = await getCurrentUser();
   const hasCloudConfig = isSupabaseConfigured();
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseAnonKey = getSupabaseAnonKey();
 
   return (
     <html lang="en">
@@ -98,7 +102,12 @@ export default async function RootLayout({
               </Link>
 
               {/* User Account / Auth Button */}
-              <AuthButton user={user} hasCloudConfig={hasCloudConfig} />
+              <AuthButton
+                user={user}
+                hasCloudConfig={hasCloudConfig}
+                initialSupabaseUrl={supabaseUrl}
+                initialSupabaseAnonKey={supabaseAnonKey}
+              />
             </div>
           </div>
         </header>

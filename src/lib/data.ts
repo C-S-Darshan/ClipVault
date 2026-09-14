@@ -171,6 +171,13 @@ export async function getAuthorizedClips(options: ClipFilterOptions = {}): Promi
 
         return mappedClips;
       }
+
+      if (error) {
+        console.error('Supabase clips query error:', error.message);
+        return [];
+      }
+
+      return [];
     }
   }
 

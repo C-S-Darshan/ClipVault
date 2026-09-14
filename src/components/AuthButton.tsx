@@ -9,9 +9,16 @@ import { ShieldCheck, ShieldAlert, LogOut, Loader2, Mail, X, CheckCircle2, Alert
 interface AuthButtonProps {
   user: UserProfile;
   hasCloudConfig: boolean;
+  initialSupabaseUrl?: string;
+  initialSupabaseAnonKey?: string;
 }
 
-export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) => {
+export const AuthButton: React.FC<AuthButtonProps> = ({
+  user,
+  hasCloudConfig,
+  initialSupabaseUrl,
+  initialSupabaseAnonKey,
+}) => {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,15 +29,19 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) 
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    if (typeof window !== 'undefined') {
+      if (initialSupabaseUrl) (window as any).__SUPABASE_URL = initialSupabaseUrl;
+      if (initialSupabaseAnonKey) (window as any).__SUPABASE_ANON_KEY = initialSupabaseAnonKey;
+    }
+  }, [initialSupabaseUrl, initialSupabaseAnonKey]);
 
   const handleSignInWithGoogle = async () => {
     setIsLoading(true);
     setAuthError(null);
     try {
-      const supabase = createClient();
+      const supabase = createClient(initialSupabaseUrl, initialSupabaseAnonKey);
       if (!supabase) {
-        setAuthError('Supabase client not initialized. Check your environment variables.');
+        setAuthError('Supabase credentials not found. Please verify your Project URL and API Key.');
         return;
       }
       const { error } = await supabase.auth.signInWithOAuth({
@@ -62,8 +73,11 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) 
     setIsLoading(true);
     setAuthError(null);
     try {
-      const supabase = createClient();
-      if (!supabase) return;
+      const supabase = createClient(initialSupabaseUrl, initialSupabaseAnonKey);
+      if (!supabase) {
+        setAuthError('Supabase credentials not found. Please verify your Project URL and API Key.');
+        return;
+      }
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
@@ -85,7 +99,7 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) 
   const handleSignOut = async () => {
     setIsLoading(true);
     try {
-      const supabase = createClient();
+      const supabase = createClient(initialSupabaseUrl, initialSupabaseAnonKey);
       if (supabase) {
         await supabase.auth.signOut();
       }
@@ -97,69 +111,17 @@ export const AuthButton: React.FC<AuthButtonProps> = ({ user, hasCloudConfig }) 
     }
   };
 
-  // If local preview mode, show preview member badge
-  if (!hasCloudConfig) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          padding: '0.35rem 0.75rem',
-          background: 'var(--bg-surface-elevated)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-full)',
-        }}
-      >
-        {user.avatar_url ? (
-          <img
-            src={user.avatar_url}
-            alt={user.name}
-            style={{
-              width: '1.75rem',
-              height: '1.75rem',
-              borderRadius: '50%',
-              objectFit: 'cover',
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: '1.75rem',
-              height: '1.75rem',
-              borderRadius: '50%',
-              background: 'var(--accent-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-            }}
-          >
-            {user.name.charAt(0)}
-          </div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{user.name}</span>
-          <span
-            style={{
-              fontSize: '0.65rem',
-              color: user.is_approved ? 'var(--accent-success)' : 'var(--accent-warning)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.2rem',
-            }}
-          >
-            <ShieldCheck size={10} />
-            {user.is_approved ? 'Approved Member' : 'Pending Approval'}
-          </span>
-        </div>
-      </div>
-    );
-  }
+  // Determine if user is actually authenticated
+  const isRealUser = Boolean(
+    user &&
+    user.id &&
+    user.id !== '' &&
+    user.id !== 'user-darshan-1' &&
+    user.name !== 'Guest'
+  );
 
-  // If Supabase is configured and user is signed in
-  if (user.id) {
+  // If user is authenticated in Supabase
+  if (isRealUser) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <div
