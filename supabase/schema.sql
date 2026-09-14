@@ -138,13 +138,27 @@ BEGIN
         WHERE id = auth.uid() AND is_approved = TRUE
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+-- Helper function: Check if user has permission for a specific clip (SECURITY DEFINER prevents RLS recursion)
+CREATE OR REPLACE FUNCTION public.has_clip_permission(check_clip_id UUID, check_user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.clip_permissions
+        WHERE clip_id = check_clip_id
+        AND user_id = check_user_id
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- Users policies
+DROP POLICY IF EXISTS "Approved users can view user profiles" ON public.users;
 CREATE POLICY "Approved users can view user profiles"
     ON public.users FOR SELECT
     USING (public.is_current_user_approved() OR auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update their own profile name/avatar" ON public.users;
 CREATE POLICY "Users can update their own profile name/avatar"
     ON public.users FOR UPDATE
     USING (auth.uid() = id);
@@ -152,51 +166,53 @@ CREATE POLICY "Users can update their own profile name/avatar"
 -- Clips policies
 -- Can read clip if:
 -- 1. User is approved AND
--- 2. (visibility = FRIENDS OR uploader OR in clip_permissions)
+-- 2. (visibility = FRIENDS OR uploader OR in clip_permissions via SECURITY DEFINER function)
+DROP POLICY IF EXISTS "Authorized users can view permitted clips" ON public.clips;
 CREATE POLICY "Authorized users can view permitted clips"
     ON public.clips FOR SELECT
     USING (
         public.is_current_user_approved() AND (
             visibility = 'FRIENDS'
             OR uploaded_by = auth.uid()
-            OR (
-                visibility = 'SELECTED' AND EXISTS (
-                    SELECT 1 FROM public.clip_permissions
-                    WHERE clip_permissions.clip_id = clips.id
-                    AND clip_permissions.user_id = auth.uid()
-                )
-            )
+            OR (visibility = 'SELECTED' AND public.has_clip_permission(id, auth.uid()))
         )
     );
 
+DROP POLICY IF EXISTS "Approved users can insert their own clips" ON public.clips;
 CREATE POLICY "Approved users can insert their own clips"
     ON public.clips FOR INSERT
     WITH CHECK (
         public.is_current_user_approved() AND uploaded_by = auth.uid()
     );
 
+DROP POLICY IF EXISTS "Uploaders can update their own clips" ON public.clips;
 CREATE POLICY "Uploaders can update their own clips"
     ON public.clips FOR UPDATE
     USING (uploaded_by = auth.uid())
     WITH CHECK (uploaded_by = auth.uid());
 
+DROP POLICY IF EXISTS "Uploaders can delete their own clips" ON public.clips;
 CREATE POLICY "Uploaders can delete their own clips"
     ON public.clips FOR DELETE
     USING (uploaded_by = auth.uid());
 
 -- Tags & Clip Tags policies
+DROP POLICY IF EXISTS "Approved users can view tags" ON public.tags;
 CREATE POLICY "Approved users can view tags"
     ON public.tags FOR SELECT
     USING (public.is_current_user_approved());
 
+DROP POLICY IF EXISTS "Approved users can insert tags" ON public.tags;
 CREATE POLICY "Approved users can insert tags"
     ON public.tags FOR INSERT
     WITH CHECK (public.is_current_user_approved());
 
+DROP POLICY IF EXISTS "Approved users can view clip_tags" ON public.clip_tags;
 CREATE POLICY "Approved users can view clip_tags"
     ON public.clip_tags FOR SELECT
     USING (public.is_current_user_approved());
 
+DROP POLICY IF EXISTS "Uploaders can link tags to their clips" ON public.clip_tags;
 CREATE POLICY "Uploaders can link tags to their clips"
     ON public.clip_tags FOR INSERT
     WITH CHECK (
@@ -206,6 +222,7 @@ CREATE POLICY "Uploaders can link tags to their clips"
         )
     );
 
+DROP POLICY IF EXISTS "Uploaders can unlink tags from their clips" ON public.clip_tags;
 CREATE POLICY "Uploaders can unlink tags from their clips"
     ON public.clip_tags FOR DELETE
     USING (
@@ -215,13 +232,26 @@ CREATE POLICY "Uploaders can unlink tags from their clips"
         )
     );
 
--- Clip Permissions policies
+-- Clip Permissions policies (Split into SELECT, INSERT, DELETE to prevent recursion)
+DROP POLICY IF EXISTS "Approved users can view clip permissions" ON public.clip_permissions;
 CREATE POLICY "Approved users can view clip permissions"
     ON public.clip_permissions FOR SELECT
     USING (public.is_current_user_approved());
 
-CREATE POLICY "Uploaders can manage clip permissions"
-    ON public.clip_permissions FOR ALL
+DROP POLICY IF EXISTS "Uploaders can manage clip permissions" ON public.clip_permissions;
+DROP POLICY IF EXISTS "Uploaders can insert clip permissions" ON public.clip_permissions;
+CREATE POLICY "Uploaders can insert clip permissions"
+    ON public.clip_permissions FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.clips
+            WHERE clips.id = clip_id AND clips.uploaded_by = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS "Uploaders can delete clip permissions" ON public.clip_permissions;
+CREATE POLICY "Uploaders can delete clip permissions"
+    ON public.clip_permissions FOR DELETE
     USING (
         EXISTS (
             SELECT 1 FROM public.clips
@@ -230,16 +260,17 @@ CREATE POLICY "Uploaders can manage clip permissions"
     );
 
 -- Comments policies
+DROP POLICY IF EXISTS "Users who can view a clip can read comments" ON public.comments;
 CREATE POLICY "Users who can view a clip can read comments"
     ON public.comments FOR SELECT
     USING (
         EXISTS (
             SELECT 1 FROM public.clips
             WHERE clips.id = comments.clip_id
-            -- The clips RLS policy will automatically verify clip view permission
         )
     );
 
+DROP POLICY IF EXISTS "Approved users can post comments on accessible clips" ON public.comments;
 CREATE POLICY "Approved users can post comments on accessible clips"
     ON public.comments FOR INSERT
     WITH CHECK (
@@ -251,11 +282,13 @@ CREATE POLICY "Approved users can post comments on accessible clips"
         )
     );
 
+DROP POLICY IF EXISTS "Users can only delete their own comments" ON public.comments;
 CREATE POLICY "Users can only delete their own comments"
     ON public.comments FOR DELETE
     USING (user_id = auth.uid());
 
 -- Reactions policies
+DROP POLICY IF EXISTS "Users who can view a clip can read reactions" ON public.reactions;
 CREATE POLICY "Users who can view a clip can read reactions"
     ON public.reactions FOR SELECT
     USING (
@@ -265,6 +298,7 @@ CREATE POLICY "Users who can view a clip can read reactions"
         )
     );
 
+DROP POLICY IF EXISTS "Approved users can add reactions to accessible clips" ON public.reactions;
 CREATE POLICY "Approved users can add reactions to accessible clips"
     ON public.reactions FOR INSERT
     WITH CHECK (
@@ -276,6 +310,8 @@ CREATE POLICY "Approved users can add reactions to accessible clips"
         )
     );
 
+DROP POLICY IF EXISTS "Users can remove their own reactions" ON public.reactions;
 CREATE POLICY "Users can remove their own reactions"
     ON public.reactions FOR DELETE
     USING (user_id = auth.uid());
+
