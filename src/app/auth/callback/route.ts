@@ -7,14 +7,16 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') || '/';
 
   // Extract reverse-proxy host & protocol headers if behind Vercel or load balancer
-  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
 
   let baseUrl = origin;
-  if (forwardedHost) {
+  if (forwardedHost && !forwardedHost.includes('localhost')) {
     baseUrl = `${forwardedProto}://${forwardedHost}`;
   } else if (process.env.NEXT_PUBLIC_SITE_URL) {
     baseUrl = process.env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, '');
+  } else if (process.env.NODE_ENV === 'production' || baseUrl.includes('localhost')) {
+    baseUrl = 'https://clip-vault-seven.vercel.app';
   }
 
   const safeNext = next.startsWith('/') ? next : `/${next}`;

@@ -22,6 +22,11 @@ export function getSiteUrl(): string {
     return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`.replace(/\/+$/, '');
   }
 
+  // Production fallback
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://clip-vault-seven.vercel.app';
+  }
+
   // Default local development fallback
   return 'http://localhost:3000';
 }
