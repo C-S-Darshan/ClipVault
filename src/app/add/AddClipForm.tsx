@@ -627,7 +627,18 @@ export const AddClipForm: React.FC<AddClipFormProps> = ({ user }) => {
             type="submit"
             disabled={isSubmitting}
             className="btn btn-primary"
-            style={{ padding: '0.85rem', fontSize: '1rem', marginTop: '0.5rem' }}
+            style={{
+              padding: '0.85rem',
+              fontSize: '1rem',
+              marginTop: '0.5rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              minHeight: '3.25rem',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              opacity: isSubmitting ? 0.85 : 1,
+            }}
           >
             {isSubmitting ? (
               <>

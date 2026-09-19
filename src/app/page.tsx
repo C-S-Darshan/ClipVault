@@ -2,9 +2,8 @@ import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { getAuthorizedClips } from '@/lib/data';
 import { getCurrentUser } from '@/lib/auth';
-import { ClipCard } from '@/components/ClipCard';
-import { FilterBar } from '@/components/FilterBar';
-import { Film, Plus, Sparkles, Inbox } from 'lucide-react';
+import { ClipsExplorer } from '@/components/ClipsExplorer';
+import { Sparkles, Plus } from 'lucide-react';
 
 interface HomePageProps {
   searchParams: {
@@ -62,65 +61,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             Unlisted clips organized, discussed, and authorized for your friend circle.
           </p>
         </div>
+
+        <Link href="/add" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+          <Plus size={16} /> Add Clip
+        </Link>
       </div>
 
-      {/* Filter and Search Bar with Suspense for URL query params */}
-      <Suspense fallback={<div style={{ height: '4rem' }} />}>
-        <FilterBar />
+      {/* Reactive REST API Clips Explorer */}
+      <Suspense fallback={<div className="clips-grid">{[1, 2, 3].map(i => <div key={i} className="glass-panel" style={{ height: 320 }} />)}</div>}>
+        <ClipsExplorer initialClips={clips} />
       </Suspense>
-
-      {/* Clips Grid or Empty State */}
-      {clips.length > 0 ? (
-        <div className="clips-grid">
-          {clips.map((clip) => (
-            <ClipCard key={clip.id} clip={clip} />
-          ))}
-        </div>
-      ) : (
-        <div
-          className="glass-panel"
-          style={{
-            padding: '4rem 2rem',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '1rem',
-            maxWidth: '500px',
-            margin: '2rem auto',
-          }}
-        >
-          <div
-            style={{
-              width: '4rem',
-              height: '4rem',
-              borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--accent-primary)',
-            }}
-          >
-            <Inbox size={32} />
-          </div>
-          <div>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff', marginBottom: '0.35rem' }}>
-              No clips found
-            </h3>
-            <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-              {searchParams.q || searchParams.category || searchParams.tag
-                ? 'No clips matched your active search or filters. Try resetting the filters.'
-                : 'Your vault is currently empty. Upload your first unlisted clip to get started!'}
-            </p>
-          </div>
-          <Link href="/add" className="btn btn-primary" style={{ marginTop: '0.5rem' }}>
-            <Plus size={16} />
-            <span>Add a Clip</span>
-          </Link>
-        </div>
-      )}
     </div>
   );
 }
+

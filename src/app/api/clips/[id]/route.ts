@@ -8,12 +8,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const clip = await getClipById(params.id, user.id);
 
     if (!clip) {
-      return NextResponse.json({ error: 'Clip not found or access denied.' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Clip not found or access denied.' }, { status: 404 });
     }
 
-    return NextResponse.json({ clip });
+    return NextResponse.json({ success: true, clip });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
 

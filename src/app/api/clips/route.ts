@@ -6,10 +6,38 @@ import { extractYouTubeVideoId, getCanonicalYouTubeUrl } from '@/lib/youtube';
 export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser();
-    const clips = await getAuthorizedClips({ currentUserId: user.id });
-    return NextResponse.json({ clips });
+    const { searchParams } = new URL(req.url);
+
+    const search = searchParams.get('q') || searchParams.get('search') || undefined;
+    const category = searchParams.get('category') || undefined;
+    const tag = searchParams.get('tag') || undefined;
+    const sortParam = searchParams.get('sort');
+    const sortBy = sortParam === 'oldest' ? 'oldest' : 'newest';
+
+    const clips = await getAuthorizedClips({
+      search: search || undefined,
+      category: category && category !== 'All' ? category : undefined,
+      tag: tag || undefined,
+      sortBy,
+      currentUserId: user.id,
+    });
+
+    return NextResponse.json({
+      success: true,
+      clips,
+      total: clips.length,
+      filters: {
+        search: search || null,
+        category: category || 'All',
+        tag: tag || null,
+        sort: sortBy,
+      },
+    });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
 
