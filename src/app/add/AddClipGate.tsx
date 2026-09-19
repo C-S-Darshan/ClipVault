@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 import { getSupabaseUrl, getSupabaseAnonKey } from '@/lib/supabase/config';
+import { getAuthRedirectUrl } from '@/lib/supabase/url';
 import {
   Lock,
   Clock,
@@ -43,10 +44,11 @@ export const AddClipGate: React.FC<AddClipGateProps> = ({ mode, user }) => {
         setAuthError('Supabase configuration missing.');
         return;
       }
+      const redirectUrl = getAuthRedirectUrl('/auth/callback');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
         },
       });
       if (error) {
@@ -77,10 +79,11 @@ export const AddClipGate: React.FC<AddClipGateProps> = ({ mode, user }) => {
         setAuthError('Supabase configuration missing.');
         return;
       }
+      const redirectUrl = getAuthRedirectUrl('/auth/callback');
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectUrl,
         },
       });
       if (error) {

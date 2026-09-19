@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
+import { getAuthRedirectUrl } from '@/lib/supabase/url';
 import { ShieldCheck, ShieldAlert, LogOut, Loader2, Mail, X, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface AuthButtonProps {
@@ -44,10 +45,11 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
         setAuthError('Supabase credentials not found. Please verify your Project URL and API Key.');
         return;
       }
+      const redirectUrl = getAuthRedirectUrl('/auth/callback');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
         },
       });
       if (error) {
@@ -78,10 +80,11 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
         setAuthError('Supabase credentials not found. Please verify your Project URL and API Key.');
         return;
       }
+      const redirectUrl = getAuthRedirectUrl('/auth/callback');
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectUrl,
         },
       });
       if (error) {
