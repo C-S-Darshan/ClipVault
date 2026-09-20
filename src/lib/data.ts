@@ -4,6 +4,7 @@ import { Clip, ClipComment, ClipReactionSummary, UserProfile, UserActivity, Clip
 import { INITIAL_MOCK_CLIPS, INITIAL_MOCK_COMMENTS, MOCK_USERS, CURRENT_USER } from './mock-data';
 import { isSupabaseConfigured } from './auth';
 import { createServerSupabaseClient } from './supabase/server';
+import { updateAuthUserMetadata, updatePublicUserProfileAdmin } from './supabase/admin';
 
 export type { ClipFilterOptions };
 
@@ -13,13 +14,18 @@ const DEV_CACHE_FILE = path.join(process.cwd(), '.clipvault-dev-data.json');
 interface DevStore {
   clips: Clip[];
   comments: Record<string, ClipComment[]>;
+  users?: UserProfile[];
 }
 
 function loadDevStore(): DevStore {
   try {
     if (fs.existsSync(DEV_CACHE_FILE)) {
       const content = fs.readFileSync(DEV_CACHE_FILE, 'utf-8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      if (!parsed.users) {
+        parsed.users = [...MOCK_USERS];
+      }
+      return parsed;
     }
   } catch (err) {
     console.warn('Failed to read dev cache file, initializing defaults:', err);
@@ -28,6 +34,7 @@ function loadDevStore(): DevStore {
   const initial: DevStore = {
     clips: [...INITIAL_MOCK_CLIPS],
     comments: { ...INITIAL_MOCK_COMMENTS },
+    users: [...MOCK_USERS],
   };
 
   try {
@@ -767,6 +774,7 @@ export async function updateUserProfile(
       if (cleanName) payload.name = cleanName;
       if (cleanAvatar !== undefined) payload.avatar_url = cleanAvatar || null;
 
+      // 1. Update public.users via user session
       const { data, error } = await supabase
         .from('users')
         .update(payload)
@@ -774,18 +782,66 @@ export async function updateUserProfile(
         .select('*')
         .single();
 
-      if (error) {
-        throw new Error(error.message);
+      // 2. Also ensure admin update on public.users as backup
+      await updatePublicUserProfileAdmin(userId, payload);
+
+      // 3. Persist custom name and avatar to auth.users user_metadata so it survives OAuth logins
+      const metadataUpdates: Record<string, any> = {};
+      if (cleanName) {
+        metadataUpdates.custom_display_name = cleanName;
+        metadataUpdates.name = cleanName;
+        metadataUpdates.full_name = cleanName;
       }
-      return data as UserProfile;
+      if (cleanAvatar !== undefined) {
+        metadataUpdates.custom_avatar_url = cleanAvatar;
+        metadataUpdates.avatar_url = cleanAvatar;
+        metadataUpdates.picture = cleanAvatar;
+      }
+
+      await Promise.all([
+        supabase.auth.updateUser({ data: metadataUpdates }).catch(() => {}),
+        updateAuthUserMetadata(userId, metadataUpdates),
+      ]);
+
+      if (!error && data) {
+        return data as UserProfile;
+      }
+
+      return {
+        id: userId,
+        name: cleanName || 'User',
+        avatar_url: cleanAvatar,
+        email: '',
+        is_approved: true,
+        created_at: new Date().toISOString(),
+      };
     }
   }
 
   // Local preview dev store
   const store = getDevStore();
-  const targetUser = MOCK_USERS.find((u) => u.id === userId) || CURRENT_USER;
+  if (!store.users) {
+    store.users = [...MOCK_USERS];
+  }
+  let targetUser = store.users.find((u) => u.id === userId);
+  if (!targetUser) {
+    targetUser = { ...CURRENT_USER, id: userId };
+    store.users.push(targetUser);
+  }
+
   if (cleanName) targetUser.name = cleanName;
   if (cleanAvatar !== undefined) targetUser.avatar_url = cleanAvatar || undefined;
+
+  // Also update CURRENT_USER and MOCK_USERS in memory
+  const mockIdx = MOCK_USERS.findIndex((u) => u.id === userId);
+  if (mockIdx !== -1) {
+    if (cleanName) MOCK_USERS[mockIdx].name = cleanName;
+    if (cleanAvatar !== undefined) MOCK_USERS[mockIdx].avatar_url = cleanAvatar || undefined;
+  }
+  if (CURRENT_USER.id === userId) {
+    if (cleanName) CURRENT_USER.name = cleanName;
+    if (cleanAvatar !== undefined) CURRENT_USER.avatar_url = cleanAvatar || undefined;
+  }
 
   // Sync uploader metadata across all existing clips and comments in local dev store
   store.clips.forEach((clip) => {

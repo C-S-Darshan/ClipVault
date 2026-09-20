@@ -119,9 +119,11 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
       if (supabase) {
         await supabase.auth.signOut();
       }
-      router.refresh();
+      // Force full-page reload and navigation to root to flush all cached client feed states
+      window.location.href = '/';
     } catch (err) {
       console.error(err);
+      window.location.href = '/';
     } finally {
       setIsLoading(false);
     }

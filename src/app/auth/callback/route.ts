@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { updatePublicUserProfileAdmin } from '@/lib/supabase/admin';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -26,6 +27,24 @@ export async function GET(request: Request) {
     if (supabase) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
+        // Retrieve authenticated user metadata
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          const customName = user.user_metadata?.custom_display_name;
+          const customAvatar = user.user_metadata?.custom_avatar_url;
+
+          // If user previously customized name or avatar, restore it to public.users table
+          if (customName || customAvatar) {
+            await updatePublicUserProfileAdmin(user.id, {
+              name: customName || undefined,
+              avatar_url: customAvatar || undefined,
+            });
+          }
+        }
+
         return NextResponse.redirect(`${baseUrl}${safeNext}`);
       }
       console.error('[Auth Callback] Failed to exchange code for session:', error.message);

@@ -47,15 +47,22 @@ export async function getCurrentUser(): Promise<UserProfile> {
     .eq('id', user.id)
     .single();
 
+  const customName = user.user_metadata?.custom_display_name;
+  const customAvatar = user.user_metadata?.custom_avatar_url;
+
   if (profile) {
-    return profile as UserProfile;
+    return {
+      ...profile,
+      name: customName || profile.name,
+      avatar_url: customAvatar !== undefined && customAvatar !== null ? customAvatar : profile.avatar_url,
+    } as UserProfile;
   }
 
   return {
     id: user.id,
     email: user.email || '',
-    name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
-    avatar_url: user.user_metadata?.avatar_url,
+    name: customName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+    avatar_url: customAvatar !== undefined && customAvatar !== null ? customAvatar : user.user_metadata?.avatar_url,
     is_approved: false,
     created_at: user.created_at,
   };
