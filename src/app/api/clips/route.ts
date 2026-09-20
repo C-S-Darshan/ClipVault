@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClip, getAuthorizedClips } from '@/lib/data';
+import { createClip, getAuthorizedClips, getAvailableGames } from '@/lib/data';
 import { getCurrentUser, isUserLoggedIn, isUserApproved } from '@/lib/auth';
 import { extractYouTubeVideoId, getCanonicalYouTubeUrl } from '@/lib/youtube';
 
@@ -11,25 +11,35 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('q') || searchParams.get('search') || undefined;
     const category = searchParams.get('category') || undefined;
     const tag = searchParams.get('tag') || undefined;
+    const uploaderId = searchParams.get('uploader') || searchParams.get('uploaderId') || undefined;
+    const game = searchParams.get('game') || undefined;
     const sortParam = searchParams.get('sort');
     const sortBy = sortParam === 'oldest' ? 'oldest' : 'newest';
 
-    const clips = await getAuthorizedClips({
-      search: search || undefined,
-      category: category && category !== 'All' ? category : undefined,
-      tag: tag || undefined,
-      sortBy,
-      currentUserId: user.id,
-    });
+    const [clips, availableGames] = await Promise.all([
+      getAuthorizedClips({
+        search: search || undefined,
+        category: category && category !== 'All' ? category : undefined,
+        tag: tag || undefined,
+        uploaderId: uploaderId && uploaderId !== 'All' ? uploaderId : undefined,
+        game: game && game !== 'All' ? game : undefined,
+        sortBy,
+        currentUserId: user.id,
+      }),
+      getAvailableGames(),
+    ]);
 
     return NextResponse.json({
       success: true,
       clips,
       total: clips.length,
+      availableGames,
       filters: {
         search: search || null,
         category: category || 'All',
         tag: tag || null,
+        uploaderId: uploaderId || 'All',
+        game: game || 'All',
         sort: sortBy,
       },
     });

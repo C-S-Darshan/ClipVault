@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { getAuthorizedClips } from '@/lib/data';
-import { getCurrentUser } from '@/lib/auth';
+import { getAuthorizedClips, getAvailableGames } from '@/lib/data';
+import { getCurrentUser, getAllApprovedUsers } from '@/lib/auth';
 import { ClipsExplorer } from '@/components/ClipsExplorer';
 import { Sparkles, Plus } from 'lucide-react';
 
@@ -10,16 +10,25 @@ interface HomePageProps {
     q?: string;
     category?: string;
     tag?: string;
+    uploader?: string;
+    game?: string;
     sort?: 'newest' | 'oldest';
   };
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {
-  const user = await getCurrentUser();
+  const [user, users, games] = await Promise.all([
+    getCurrentUser(),
+    getAllApprovedUsers(),
+    getAvailableGames(),
+  ]);
+
   const clips = await getAuthorizedClips({
     search: searchParams.q,
     category: searchParams.category,
     tag: searchParams.tag,
+    uploaderId: searchParams.uploader && searchParams.uploader !== 'All' ? searchParams.uploader : undefined,
+    game: searchParams.game && searchParams.game !== 'All' ? searchParams.game : undefined,
     sortBy: searchParams.sort,
     currentUserId: user.id,
   });
@@ -69,7 +78,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
       {/* Reactive REST API Clips Explorer */}
       <Suspense fallback={<div className="clips-grid">{[1, 2, 3].map(i => <div key={i} className="glass-panel" style={{ height: 320 }} />)}</div>}>
-        <ClipsExplorer initialClips={clips} />
+        <ClipsExplorer
+          initialClips={clips}
+          initialUsers={users}
+          initialGames={games}
+        />
       </Suspense>
     </div>
   );

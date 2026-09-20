@@ -81,3 +81,40 @@ export interface YouTubeMetadata {
   authorName?: string;
   authorUrl?: string;
 }
+
+export interface ClipFilterOptions {
+  search?: string;
+  category?: string;
+  tag?: string;
+  uploaderId?: string;
+  game?: string;
+  sortBy?: 'newest' | 'oldest';
+  currentUserId?: string;
+}
+
+export interface UserActivity {
+  id: string;
+  type: 'comment' | 'reaction';
+  clip_id: string;
+  clip_title: string;
+  clip_thumbnail: string;
+  actor: {
+    id: string;
+    name: string;
+    avatar_url?: string;
+    email?: string;
+  };
+  content?: string;
+  emoji?: string;
+  created_at: string;
+}
+
+export interface ThemeSettings {
+  accentColor: string;
+  accentGlow: string;
+  bgMain: string;
+  bgSurface: string;
+  bgSurfaceElevated: string;
+  bgSurfaceGlass: string;
+}
+

@@ -27,7 +27,7 @@ export const GUEST_USER: UserProfile = {
 
 export async function getCurrentUser(): Promise<UserProfile> {
   if (!isSupabaseConfigured()) {
-    return GUEST_USER;
+    return CURRENT_USER;
   }
 
   const supabase = await createServerSupabaseClient();

@@ -1,11 +1,24 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 import { getAuthRedirectUrl } from '@/lib/supabase/url';
-import { ShieldCheck, ShieldAlert, LogOut, Loader2, Mail, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  LogOut,
+  Loader2,
+  Mail,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  ChevronDown,
+  User,
+  Sparkles,
+} from 'lucide-react';
 
 interface AuthButtonProps {
   user: UserProfile;
@@ -114,28 +127,50 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
     }
   };
 
-  // Determine if user is actually authenticated
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
+
+  // Determine if user is logged in
   const isRealUser = Boolean(
     user &&
     user.id &&
     user.id !== '' &&
-    user.id !== 'user-darshan-1' &&
     user.name !== 'Guest'
   );
 
-  // If user is authenticated in Supabase
+  // If user is authenticated
   if (isRealUser) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <div
+      <div style={{ position: 'relative' }} ref={dropdownRef}>
+        {/* User Pill Button */}
+        <button
+          type="button"
+          onClick={() => setShowDropdown(!showDropdown)}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.35rem 0.75rem',
-            background: 'var(--bg-surface-elevated)',
-            border: '1px solid var(--border-subtle)',
+            gap: '0.65rem',
+            padding: '0.35rem 0.85rem 0.35rem 0.5rem',
+            background: showDropdown ? 'var(--bg-surface-elevated)' : 'rgba(255, 255, 255, 0.05)',
+            border: `1px solid ${showDropdown ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
             borderRadius: 'var(--radius-full)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           {user.avatar_url ? (
@@ -143,17 +178,18 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
               src={user.avatar_url}
               alt={user.name}
               style={{
-                width: '1.75rem',
-                height: '1.75rem',
+                width: '1.85rem',
+                height: '1.85rem',
                 borderRadius: '50%',
                 objectFit: 'cover',
+                border: '1.5px solid var(--accent-primary)',
               }}
             />
           ) : (
             <div
               style={{
-                width: '1.75rem',
-                height: '1.75rem',
+                width: '1.85rem',
+                height: '1.85rem',
                 borderRadius: '50%',
                 background: 'var(--accent-primary)',
                 display: 'flex',
@@ -161,13 +197,15 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
                 justifyContent: 'center',
                 fontSize: '0.8rem',
                 fontWeight: 700,
+                color: '#fff',
               }}
             >
               {user.name ? user.name.charAt(0) : 'U'}
             </div>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{user.name}</span>
+
+          <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fff' }}>{user.name}</span>
             <span
               style={{
                 fontSize: '0.65rem',
@@ -178,26 +216,123 @@ export const AuthButton: React.FC<AuthButtonProps> = ({
               }}
             >
               {user.is_approved ? <ShieldCheck size={10} /> : <ShieldAlert size={10} />}
-              {user.is_approved ? 'Approved Member' : 'Pending Approval'}
+              {user.is_approved ? 'Approved' : 'Pending'}
             </span>
           </div>
-        </div>
 
-        <button
-          onClick={handleSignOut}
-          disabled={isLoading}
-          title="Sign Out"
-          className="btn btn-secondary"
-          style={{
-            padding: '0.45rem 0.65rem',
-            fontSize: '0.75rem',
-            borderRadius: 'var(--radius-full)',
-            gap: '0.35rem',
-          }}
-        >
-          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
-          <span>Sign Out</span>
+          <ChevronDown
+            size={14}
+            color="var(--text-dim)"
+            style={{
+              transition: 'transform 0.2s',
+              transform: showDropdown ? 'rotate(180deg)' : 'none',
+              marginLeft: '0.2rem',
+            }}
+          />
         </button>
+
+        {/* Dropdown Menu Popover */}
+        {showDropdown && (
+          <div
+            className="glass-panel"
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 0.5rem)',
+              right: 0,
+              width: '240px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-glass)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-lg)',
+              padding: '0.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.25rem',
+              zIndex: 1000,
+            }}
+          >
+            {/* Header info */}
+            <div style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)', marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>{user.name}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user.email || 'Vault Member'}
+              </div>
+            </div>
+
+            {/* Links */}
+            <Link
+              href="/profile"
+              onClick={() => setShowDropdown(false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.55rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                color: '#fff',
+                fontSize: '0.82rem',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <User size={15} color="var(--accent-primary)" />
+              <span>Profile & Settings</span>
+            </Link>
+
+            <Link
+              href="/profile#activity"
+              onClick={() => setShowDropdown(false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.55rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                color: '#fff',
+                fontSize: '0.82rem',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Sparkles size={15} color="var(--accent-secondary)" />
+              <span>UI Theme & Colors</span>
+            </Link>
+
+            <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0.25rem 0' }} />
+
+            {/* Sign Out */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowDropdown(false);
+                handleSignOut();
+              }}
+              disabled={isLoading}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.55rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                color: '#f87171',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {isLoading ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={15} />}
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   }

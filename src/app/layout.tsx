@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from '@/lib/supabase/config';
 import { AuthButton } from '@/components/AuthButton';
-import { Film, Plus, ShieldCheck, Search, Sparkles } from 'lucide-react';
+import { ActivityBell } from '@/components/ActivityBell';
+import { Film, Plus, Sparkles, Palette } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'ClipVault — Private Friend Group Clip Library',
@@ -23,6 +24,33 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var saved = localStorage.getItem('clipvault_theme');
+                  if (saved) {
+                    var parsed = JSON.parse(saved);
+                    var root = document.documentElement;
+                    if (parsed.accent) {
+                      root.style.setProperty('--accent-primary', parsed.accent);
+                      root.style.setProperty('--accent-primary-hover', parsed.accent);
+                    }
+                    if (parsed.bg) {
+                      root.style.setProperty('--bg-main', parsed.bg.bgMain);
+                      root.style.setProperty('--bg-surface', parsed.bg.bgSurface);
+                      root.style.setProperty('--bg-surface-elevated', parsed.bg.bgElevated);
+                      root.style.setProperty('--bg-surface-glass', parsed.bg.bgGlass);
+                    }
+                  }
+                } catch(e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body>
         {!hasCloudConfig && (
           <div
@@ -94,7 +122,32 @@ export default async function RootLayout({
             </Link>
 
             {/* Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {/* Activity Bell Notifications */}
+              <ActivityBell userId={user.id} />
+
+              {/* Theme Customizer Quick Link */}
+              <Link
+                href="/profile#theme"
+                title="Customize UI Theme & Colors"
+                style={{
+                  width: '2.5rem',
+                  height: '2.5rem',
+                  borderRadius: '50%',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <Palette size={17} />
+              </Link>
+
+              {/* Add Clip Button */}
               <Link href="/add" className="btn btn-primary">
                 <Plus size={16} />
                 <span>Add Clip</span>

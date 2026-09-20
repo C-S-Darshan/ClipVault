@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import { Clip, ClipComment, ClipReactionSummary, UserProfile } from './types';
+import { Clip, ClipComment, ClipReactionSummary, UserProfile, UserActivity, ClipFilterOptions } from './types';
 import { INITIAL_MOCK_CLIPS, INITIAL_MOCK_COMMENTS, MOCK_USERS, CURRENT_USER } from './mock-data';
 import { isSupabaseConfigured } from './auth';
 import { createServerSupabaseClient } from './supabase/server';
+
+export type { ClipFilterOptions };
 
 // Persistent file-backed cache for development preview mode
 const DEV_CACHE_FILE = path.join(process.cwd(), '.clipvault-dev-data.json');
@@ -61,14 +63,6 @@ function getDevStore(): DevStore {
   return globalObj.__clipvault_store || loadDevStore();
 }
 
-export interface ClipFilterOptions {
-  search?: string;
-  category?: string;
-  tag?: string;
-  sortBy?: 'newest' | 'oldest';
-  currentUserId?: string;
-}
-
 /**
  * Retrieves clips that the current user is authorized to see.
  * Authorization logic adheres strictly to Section 9 & 19 of specification:
@@ -81,6 +75,8 @@ export async function getAuthorizedClips(options: ClipFilterOptions = {}): Promi
     search = '',
     category,
     tag,
+    uploaderId,
+    game,
     sortBy = 'newest',
     currentUserId = CURRENT_USER.id,
   } = options;
@@ -101,6 +97,14 @@ export async function getAuthorizedClips(options: ClipFilterOptions = {}): Promi
 
       if (category && category !== 'All') {
         query = query.eq('category', category);
+      }
+
+      if (uploaderId && uploaderId !== 'All') {
+        query = query.eq('uploaded_by', uploaderId);
+      }
+
+      if (game && game !== 'All') {
+        query = query.ilike('game', game);
       }
 
       if (sortBy === 'oldest') {
@@ -197,6 +201,14 @@ export async function getAuthorizedClips(options: ClipFilterOptions = {}): Promi
 
   if (category && category !== 'All') {
     filtered = filtered.filter((c) => c.category.toLowerCase() === category.toLowerCase());
+  }
+
+  if (uploaderId && uploaderId !== 'All') {
+    filtered = filtered.filter((c) => c.uploaded_by === uploaderId);
+  }
+
+  if (game && game !== 'All') {
+    filtered = filtered.filter((c) => c.game.toLowerCase() === game.toLowerCase());
   }
 
   if (tag) {
@@ -722,3 +734,254 @@ export async function toggleClipReaction(
   saveDevStore(store);
   return clip.reactions;
 }
+
+/**
+ * Retrieves the distinct list of games from clips
+ */
+export async function getAvailableGames(): Promise<string[]> {
+  const clips = await getAuthorizedClips();
+  const gameSet = new Set<string>();
+  clips.forEach((c) => {
+    if (c.game && c.game.trim()) {
+      gameSet.add(c.game.trim());
+    }
+  });
+  return Array.from(gameSet).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Updates a user profile (display name and avatar_url)
+ * Synchronizes across clips and comments
+ */
+export async function updateUserProfile(
+  userId: string,
+  updates: { name?: string; avatar_url?: string }
+): Promise<UserProfile> {
+  const cleanName = updates.name?.trim();
+  const cleanAvatar = updates.avatar_url?.trim();
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const payload: Record<string, any> = {};
+      if (cleanName) payload.name = cleanName;
+      if (cleanAvatar !== undefined) payload.avatar_url = cleanAvatar || null;
+
+      const { data, error } = await supabase
+        .from('users')
+        .update(payload)
+        .eq('id', userId)
+        .select('*')
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data as UserProfile;
+    }
+  }
+
+  // Local preview dev store
+  const store = getDevStore();
+  const targetUser = MOCK_USERS.find((u) => u.id === userId) || CURRENT_USER;
+  if (cleanName) targetUser.name = cleanName;
+  if (cleanAvatar !== undefined) targetUser.avatar_url = cleanAvatar || undefined;
+
+  // Sync uploader metadata across all existing clips and comments in local dev store
+  store.clips.forEach((clip) => {
+    if (clip.uploaded_by === userId) {
+      clip.uploader.name = targetUser.name;
+      if (cleanAvatar !== undefined) clip.uploader.avatar_url = targetUser.avatar_url;
+    }
+  });
+
+  Object.values(store.comments).forEach((commentList) => {
+    commentList.forEach((comment) => {
+      if (comment.user_id === userId) {
+        comment.user.name = targetUser.name;
+        if (cleanAvatar !== undefined) comment.user.avatar_url = targetUser.avatar_url;
+      }
+    });
+  });
+
+  saveDevStore(store);
+  return targetUser;
+}
+
+/**
+ * Retrieves vault statistics for a given user
+ */
+export async function getUserStats(userId: string): Promise<{
+  clipsCount: number;
+  reactionsReceived: number;
+  commentsCount: number;
+}> {
+  const allClips = await getAuthorizedClips({ currentUserId: userId });
+  const userClips = allClips.filter((c) => c.uploaded_by === userId);
+  const clipsCount = userClips.length;
+
+  let reactionsReceived = 0;
+  userClips.forEach((c) => {
+    (c.reactions || []).forEach((r) => {
+      reactionsReceived += r.count;
+    });
+  });
+
+  let commentsCount = 0;
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      const { count } = await supabase
+        .from('comments')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      commentsCount = count || 0;
+    }
+  } else {
+    const store = getDevStore();
+    Object.values(store.comments).forEach((commList) => {
+      commentsCount += commList.filter((c) => c.user_id === userId).length;
+    });
+  }
+
+  return { clipsCount, reactionsReceived, commentsCount };
+}
+
+/**
+ * Retrieves activity items (comments & reactions by other users on clips uploaded by this user)
+ */
+export async function getUserActivities(userId: string): Promise<UserActivity[]> {
+  const activities: UserActivity[] = [];
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    if (supabase) {
+      // Find all clips uploaded by this user
+      const { data: userClips } = await supabase
+        .from('clips')
+        .select('id, title, thumbnail_url')
+        .eq('uploaded_by', userId);
+
+      if (userClips && userClips.length > 0) {
+        const clipMap = new Map(userClips.map((c: any) => [c.id, c]));
+        const clipIds = userClips.map((c: any) => c.id);
+
+        // Fetch comments by others on user's clips
+        const { data: comments } = await supabase
+          .from('comments')
+          .select('id, clip_id, user_id, content, created_at, user:users!user_id(id, name, avatar_url, email)')
+          .in('clip_id', clipIds)
+          .neq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(30);
+
+        (comments || []).forEach((c: any) => {
+          const clip = clipMap.get(c.clip_id);
+          const actor = Array.isArray(c.user) ? c.user[0] : c.user;
+          if (clip) {
+            activities.push({
+              id: `act-comm-${c.id}`,
+              type: 'comment',
+              clip_id: c.clip_id,
+              clip_title: clip.title,
+              clip_thumbnail: clip.thumbnail_url,
+              actor: {
+                id: actor?.id || c.user_id,
+                name: actor?.name || 'Friend',
+                avatar_url: actor?.avatar_url,
+                email: actor?.email,
+              },
+              content: c.content,
+              created_at: c.created_at,
+            });
+          }
+        });
+
+        // Fetch reactions by others on user's clips
+        const { data: reactions } = await supabase
+          .from('reactions')
+          .select('id, clip_id, user_id, emoji, created_at, user:users!user_id(id, name, avatar_url, email)')
+          .in('clip_id', clipIds)
+          .neq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(30);
+
+        (reactions || []).forEach((r: any) => {
+          const clip = clipMap.get(r.clip_id);
+          const actor = Array.isArray(r.user) ? r.user[0] : r.user;
+          if (clip) {
+            activities.push({
+              id: `act-react-${r.id}`,
+              type: 'reaction',
+              clip_id: r.clip_id,
+              clip_title: clip.title,
+              clip_thumbnail: clip.thumbnail_url,
+              actor: {
+                id: actor?.id || r.user_id,
+                name: actor?.name || 'Friend',
+                avatar_url: actor?.avatar_url,
+                email: actor?.email,
+              },
+              emoji: r.emoji,
+              created_at: r.created_at,
+            });
+          }
+        });
+      }
+    }
+  } else {
+    // Local Preview Dev Store
+    const store = getDevStore();
+    const userClips = store.clips.filter((c) => c.uploaded_by === userId);
+
+    userClips.forEach((clip) => {
+      const clipComments = store.comments[clip.id] || [];
+      clipComments.forEach((comm) => {
+        if (comm.user_id !== userId) {
+          activities.push({
+            id: `act-${comm.id}`,
+            type: 'comment',
+            clip_id: clip.id,
+            clip_title: clip.title,
+            clip_thumbnail: clip.thumbnail_url,
+            actor: {
+              id: comm.user_id,
+              name: comm.user.name,
+              avatar_url: comm.user.avatar_url,
+              email: comm.user.email,
+            },
+            content: comm.content,
+            created_at: comm.created_at,
+          });
+        }
+      });
+
+      // Include simulated/historical reactions from friends on user's clips
+      clip.reactions.forEach((r, idx) => {
+        if (r.count > 0 && !r.reactedByCurrentUser) {
+          const friend = MOCK_USERS.find((u) => u.id !== userId) || MOCK_USERS[1];
+          activities.push({
+            id: `act-react-${clip.id}-${r.emoji}-${idx}`,
+            type: 'reaction',
+            clip_id: clip.id,
+            clip_title: clip.title,
+            clip_thumbnail: clip.thumbnail_url,
+            actor: {
+              id: friend.id,
+              name: friend.name,
+              avatar_url: friend.avatar_url,
+              email: friend.email,
+            },
+            emoji: r.emoji,
+            created_at: clip.created_at,
+          });
+        }
+      });
+    });
+  }
+
+  // Sort newest first
+  activities.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return activities;
+}
+
